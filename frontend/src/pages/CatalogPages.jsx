@@ -1,11 +1,26 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { Search, Leaf, ArrowLeft, Calendar, MapPin, Flower2, BookOpen, Edit, Trash2, Plus, X, AlertCircle } from 'lucide-react';
 import axios from '../api.js';
 import { useAuth } from '../context/AuthContext';
 import useLazyReveal from '../hooks/useLazyReveal';
+import { treeImageUrl } from '../utils/imageUrl.js';
 
 const API = '/api';
+
+function TreeImage({ url, alt, className }) {
+  const [error, setError] = useState(false);
+  const src = treeImageUrl(url);
+  if (!src || error) {
+    return (
+      <div className="w-full h-full flex items-center justify-center flex-col">
+        <Flower2 size={48} className="text-flora-300 mb-2" />
+        <span className="text-xs text-flora-400">Нет фото</span>
+      </div>
+    );
+  }
+  return <img src={src} alt={alt} className={className} onError={() => setError(true)} loading="lazy" />;
+}
 
 function TreeCard({ tree }) {
   const ref = useLazyReveal();
@@ -13,15 +28,12 @@ function TreeCard({ tree }) {
     <Link to={`/catalog/${tree.id}`} ref={ref}
       className="lazy-reveal card hover:shadow-xl transition-all duration-300 hover:-translate-y-1 group block overflow-hidden">
       <div className="h-44 bg-gradient-to-br from-flora-100 to-blossom-100 flex items-center justify-center relative overflow-hidden">
-        {tree.image_url ? (
-          <img src={tree.image_url} alt={tree.name_ru} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" />
-        ) : (
-          <div className="text-center">
-            <Flower2 size={48} className="text-flora-300 mx-auto mb-2 group-hover:scale-110 transition-transform" />
-            <span className="text-xs text-flora-400">Нет фото</span>
-          </div>
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-earth-900/40 to-transparent" />
+        <TreeImage
+          url={tree.image_url}
+          alt={tree.name_ru}
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-earth-900/40 to-transparent pointer-events-none" />
       </div>
       <div className="p-4">
         <h3 className="font-display font-semibold text-earth-800 text-lg leading-tight mb-1">{tree.name_ru}</h3>
@@ -59,26 +71,16 @@ export function CatalogPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-flora-50 via-white to-blossom-50 pt-20 pb-12 px-4">
       <div className="max-w-6xl mx-auto">
-        {/* Header */}
         <div className="text-center mb-10 page-enter">
-          <h1 className="font-display font-bold text-3xl md:text-4xl text-earth-800 mb-3">
-            🌳 Каталог деревьев
-          </h1>
-          <p className="text-earth-400 max-w-lg mx-auto">
-            Подробные описания деревьев с характеристиками цветков, временем цветения и ареалом.
-          </p>
+          <h1 className="font-display font-bold text-3xl md:text-4xl text-earth-800 mb-3">🌳 Каталог деревьев</h1>
+          <p className="text-earth-400 max-w-lg mx-auto">Подробные описания деревьев с характеристиками цветков, временем цветения и ареалом.</p>
         </div>
 
-        {/* Search + add */}
         <div className="flex gap-3 mb-8">
           <div className="relative flex-1">
             <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-earth-400" />
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Поиск по названию..."
-              className="input-field pl-10"
-            />
+            <input value={search} onChange={e => setSearch(e.target.value)}
+              placeholder="Поиск по названию..." className="input-field pl-10" />
             {search && (
               <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-earth-300 hover:text-earth-500">
                 <X size={16} />
@@ -86,9 +88,7 @@ export function CatalogPage() {
             )}
           </div>
           {user && (
-            <Link to="/catalog/new" className="btn-primary whitespace-nowrap">
-              <Plus size={18} /> Добавить
-            </Link>
+            <Link to="/catalog/new" className="btn-primary whitespace-nowrap"><Plus size={18} /> Добавить</Link>
           )}
         </div>
 
@@ -145,8 +145,7 @@ export function TreeDetailPage() {
       <Flower2 size={40} className="animate-spin text-flora-400" />
     </div>
   );
-
-  if (!tree && id !== 'new') return (
+  if (!tree) return (
     <div className="min-h-screen flex items-center justify-center pt-16">
       <div className="text-center">
         <p className="text-earth-500">Дерево не найдено</p>
@@ -155,31 +154,22 @@ export function TreeDetailPage() {
     </div>
   );
 
-  if (id === 'new') return <TreeForm onSave={() => navigate('/catalog')} />;
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-flora-50 to-white pt-20 pb-12 px-4">
       <div className="max-w-3xl mx-auto">
         <div className="flex items-center gap-3 mb-6">
-          <button onClick={() => navigate(-1)} className="btn-secondary !p-2">
-            <ArrowLeft size={18} />
-          </button>
-          <Link to="/catalog" className="text-sm text-earth-400 hover:text-flora-600 transition-colors">
-            ← Каталог
-          </Link>
+          <button onClick={() => navigate(-1)} className="btn-secondary !p-2"><ArrowLeft size={18} /></button>
+          <Link to="/catalog" className="text-sm text-earth-400 hover:text-flora-600 transition-colors">← Каталог</Link>
         </div>
 
         <div className="card overflow-hidden page-enter">
-          {/* Hero image */}
           <div className="h-64 md:h-80 bg-gradient-to-br from-flora-100 to-blossom-100 relative">
-            {tree.image_url ? (
-              <img src={tree.image_url} alt={tree.name_ru} className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <Flower2 size={64} className="text-flora-200" />
-              </div>
-            )}
-            <div className="absolute inset-0 bg-gradient-to-t from-earth-900/60 to-transparent" />
+            <TreeImage
+              url={tree.image_url}
+              alt={tree.name_ru}
+              className="w-full h-full object-cover"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-earth-900/60 to-transparent pointer-events-none" />
             <div className="absolute bottom-6 left-6 right-6">
               <h1 className="font-display font-bold text-3xl text-white mb-1">{tree.name_ru}</h1>
               <p className="text-white/70 italic text-lg">{tree.name_latin}</p>
@@ -187,7 +177,6 @@ export function TreeDetailPage() {
           </div>
 
           <div className="p-6 md:p-8 space-y-6">
-            {/* Meta */}
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               <div className="bg-flora-50 rounded-2xl p-4">
                 <div className="text-xs text-flora-500 font-medium mb-1">Семейство</div>
@@ -219,12 +208,9 @@ export function TreeDetailPage() {
               </div>
             )}
 
-            {/* Actions */}
             {user && (
               <div className="flex gap-3 pt-4 border-t border-flora-100">
-                <Link to={`/catalog/${id}/edit`} className="btn-secondary flex-1 justify-center">
-                  <Edit size={16} /> Редактировать
-                </Link>
+                <Link to={`/catalog/${id}/edit`} className="btn-secondary flex-1 justify-center"><Edit size={16} /> Редактировать</Link>
                 <button onClick={handleDelete} disabled={deleting}
                   className="flex items-center gap-2 px-4 py-3 rounded-2xl text-red-500 border-2 border-red-200 hover:bg-red-50 transition-all font-semibold text-sm disabled:opacity-50">
                   <Trash2 size={16} /> Удалить
@@ -282,7 +268,6 @@ export function TreeFormPage() {
           <button onClick={() => navigate(-1)} className="btn-secondary !p-2"><ArrowLeft size={18} /></button>
           <h1 className="font-display font-bold text-2xl text-earth-800">{isEdit ? 'Редактировать дерево' : 'Добавить дерево'}</h1>
         </div>
-
         <div className="card p-6 md:p-8 page-enter">
           {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm flex gap-2"><AlertCircle size={16} />{error}</div>}
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -296,7 +281,7 @@ export function TreeFormPage() {
             ].map(({ key, label, placeholder }) => (
               <div key={key}>
                 <label className="block text-sm font-medium text-earth-700 mb-1">{label}</label>
-                <input value={form[key]} onChange={e => setForm({ ...form, [key]: e.target.value })}
+                <input value={form[key] || ''} onChange={e => setForm({ ...form, [key]: e.target.value })}
                   placeholder={placeholder} className="input-field" />
               </div>
             ))}
@@ -305,7 +290,7 @@ export function TreeFormPage() {
                 <label className="block text-sm font-medium text-earth-700 mb-1">
                   {key === 'description' ? 'Описание дерева' : 'Описание цветков'}
                 </label>
-                <textarea value={form[key]} onChange={e => setForm({ ...form, [key]: e.target.value })}
+                <textarea value={form[key] || ''} onChange={e => setForm({ ...form, [key]: e.target.value })}
                   rows={3} className="input-field resize-none" />
               </div>
             ))}
