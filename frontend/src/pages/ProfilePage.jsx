@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { User, Calendar, Trash2, Leaf, Camera, History, Award, Edit3 } from 'lucide-react';
 import axios from '../api.js';
+import { treeImageUrl } from '../utils/imageUrl.js';
 import { useAuth } from '../context/AuthContext';
 import useLazyReveal from '../hooks/useLazyReveal';
 
@@ -23,7 +24,7 @@ function HistoryCard({ item, onDelete }) {
       {/* Thumbnail */}
       <div className="w-20 h-20 rounded-xl overflow-hidden bg-flora-50 flex-shrink-0">
         {item.image_url ? (
-          <img src={item.image_url} alt="" className="w-full h-full object-cover" loading="lazy" />
+          <img src={treeImageUrl(item.image_url)} alt="" className="w-full h-full object-cover" loading="lazy" />
         ) : (
           <div className="w-full h-full flex items-center justify-center"><Leaf size={24} className="text-flora-200" /></div>
         )}
