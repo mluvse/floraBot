@@ -1,75 +1,58 @@
-import { useState, useRef, useCallback } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Camera, Upload, X, Sparkles, CheckCircle, AlertCircle, Leaf, RefreshCw, Info } from 'lucide-react';
-import axios from '../api.js';
+import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import PetalRain from '../components/PetalRain';
+import axios from 'axios';
+import { Camera, Upload, Loader2, Leaf, X, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react';
 
-const API = '/api';
+const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 export default function RecognizePage() {
   const { user } = useAuth();
-  const navigate = useNavigate();
+  const [mode, setMode] = useState('upload');
+  const [preview, setPreview] = useState(null);
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [dragging, setDragging] = useState(false);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [notes, setNotes] = useState('');
+  const [savingNotes, setSavingNotes] = useState(false);
+  const [expandedVariant, setExpandedVariant] = useState(-1);
   const fileInputRef = useRef(null);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
 
-  const [mode, setMode] = useState('upload'); // 'upload' | 'camera'
-  const [preview, setPreview] = useState(null);
-  const [file, setFile] = useState(null);
-  const [dragging, setDragging] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState('');
-  const [cameraActive, setCameraActive] = useState(false);
-  const [notes, setNotes] = useState('');
-  const [notesSaved, setNotesSaved] = useState(false);
-
-  if (!user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-flora-50 to-blossom-50 pt-16 px-4">
-        <div className="card p-10 text-center max-w-md">
-          <Leaf size={48} className="mx-auto text-flora-400 mb-4 animate-float" />
-          <h2 className="font-display font-bold text-2xl text-earth-800 mb-3">Войдите, чтобы распознавать</h2>
-          <p className="text-earth-400 mb-6">Распознавание деревьев доступно только для авторизованных пользователей.</p>
-          <div className="flex gap-3 justify-center">
-            <Link to="/login" className="btn-primary">Войти</Link>
-            <Link to="/register" className="btn-secondary">Регистрация</Link>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const handleFile = (f) => {
-    if (!f || !f.type.startsWith('image/')) { setError('Пожалуйста, выберите изображение.'); return; }
-    if (f.size > 10 * 1024 * 1024) { setError('Файл слишком большой. Максимум 10 MB.'); return; }
-    setFile(f);
-    setPreview(URL.createObjectURL(f));
-    setResult(null);
+  const handleFile = (file) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { setError('Пожалуйста, загрузите изображение'); return; }
+    if (file.size > 10 * 1024 * 1024) { setError('Файл слишком большой (макс. 10 MB)'); return; }
     setError('');
+    const reader = new FileReader();
+    reader.onload = (e) => setPreview(e.target.result);
+    reader.readAsDataURL(file);
+    uploadFile(file);
   };
 
-  const handleDrop = useCallback((e) => {
-    e.preventDefault(); setDragging(false);
-    const f = e.dataTransfer.files[0];
-    if (f) handleFile(f);
-  }, []);
+  const uploadFile = async (file) => {
+    setLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+      const res = await axios.post(`${API}/api/recognition/analyze`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data', Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      setResult(res.data);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Ошибка при распознавании');
+    } finally { setLoading(false); }
+  };
 
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
       videoRef.current.srcObject = stream;
+      videoRef.current.play();
       setCameraActive(true);
-    } catch {
-      setError('Не удалось получить доступ к камере. Проверьте разрешения.');
-    }
-  };
-
-  const stopCamera = () => {
-    const stream = videoRef.current?.srcObject;
-    stream?.getTracks().forEach(t => t.stop());
-    setCameraActive(false);
+    } catch { setError('Не удалось получить доступ к камере'); }
   };
 
   const capturePhoto = () => {
@@ -80,259 +63,271 @@ export default function RecognizePage() {
     canvas.getContext('2d').drawImage(video, 0, 0);
     const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
     setPreview(dataUrl);
-    setFile({ isBase64: true, data: dataUrl });
-    setResult(null);
-    setError('');
+    uploadBase64(dataUrl);
     stopCamera();
   };
 
-  const analyze = async () => {
-    if (!file) { setError('Загрузите или сделайте фото'); return; }
-    setLoading(true); setError(''); setResult(null);
+  const stopCamera = () => {
+    const stream = videoRef.current?.srcObject;
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    setCameraActive(false);
+  };
+
+  const uploadBase64 = async (dataUrl) => {
+    setLoading(true);
     try {
-      let res;
-      if (file.isBase64) {
-        res = await axios.post(`${API}/recognition/analyze-base64`, { imageBase64: file.data });
-      } else {
-        const fd = new FormData();
-        fd.append('image', file);
-        res = await axios.post(`${API}/recognition/analyze`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      }
+      const res = await axios.post(`${API}/api/recognition/analyze-base64`,
+        { imageBase64: dataUrl },
+        { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
+      );
       setResult(res.data);
     } catch (err) {
-      setError(err.response?.data?.error || 'Ошибка при распознавании. Попробуйте ещё раз.');
+      setError(err.response?.data?.error || 'Ошибка при распознавании');
     } finally { setLoading(false); }
   };
 
-  const saveNotes = async () => {
-    if (!result?.history_id) return;
-    try {
-      await axios.patch(`${API}/history/${result.history_id}/notes`, { notes });
-      setNotesSaved(true);
-      setTimeout(() => setNotesSaved(false), 3000);
-    } catch {}
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragging(false);
+    handleFile(e.dataTransfer.files[0]);
   };
 
   const reset = () => {
-    setPreview(null); setFile(null); setResult(null); setError(''); setNotes(''); setNotesSaved(false);
-    stopCamera();
+    setPreview(null);
+    setResult(null);
+    setError('');
+    setNotes('');
+    setExpandedVariant(-1);
   };
 
+  const saveNotes = async () => {
+    if (!result?.history_id || !notes.trim()) return;
+    setSavingNotes(true);
+    try {
+      await axios.patch(`${API}/api/history/${result.history_id}/notes`,
+        { notes },
+        { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
+      );
+    } catch {} finally { setSavingNotes(false); }
+  };
+
+  useEffect(() => { return () => stopCamera(); }, []);
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-flora-50 via-white to-blossom-50 pt-20 pb-12 px-4 relative overflow-hidden">
-      <div className="blob absolute top-0 right-0 w-80 h-80 bg-blossom-100 opacity-30 rounded-full" />
-      <div className="blob blob-2 absolute bottom-0 left-0 w-96 h-96 bg-flora-100 opacity-25 rounded-full" />
-      <PetalRain count={8} />
+    <div className="max-w-3xl mx-auto px-4 py-8">
+      <div className="text-center mb-8">
+        <h1 className="text-3xl font-bold text-flora-900 mb-2">🌸 Распознать дерево</h1>
+        <p className="text-flora-600">Загрузите фото цветущего дерева или сделайте снимок с камеры</p>
+      </div>
 
-      <div className="relative z-10 max-w-2xl mx-auto">
-        <div className="text-center mb-8 page-enter">
-          <h1 className="font-display font-bold text-3xl md:text-4xl text-earth-800 mb-2">
-            🌸 Распознать дерево
-          </h1>
-          <p className="text-earth-400">Загрузите фото цветущего дерева или сделайте снимок с камеры</p>
+      {/* Mode tabs */}
+      <div className="flex justify-center gap-2 mb-6">
+        <button onClick={() => { setMode('upload'); reset(); }}
+          className={`px-5 py-2.5 rounded-xl font-medium transition-all ${mode === 'upload' ? 'bg-flora-500 text-white shadow-lg' : 'bg-white text-flora-700 hover:bg-flora-50'}`}>
+          <Upload className="w-4 h-4 inline mr-2" />Загрузить файл
+        </button>
+        <button onClick={() => { setMode('camera'); reset(); }}
+          className={`px-5 py-2.5 rounded-xl font-medium transition-all ${mode === 'camera' ? 'bg-flora-500 text-white shadow-lg' : 'bg-white text-flora-700 hover:bg-flora-50'}`}>
+          <Camera className="w-4 h-4 inline mr-2" />Камера
+        </button>
+      </div>
+
+      {/* Upload mode */}
+      {mode === 'upload' && !preview && (
+        <div onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={handleDrop}
+          onClick={() => fileInputRef.current?.click()}
+          className={`card p-12 text-center cursor-pointer transition-all duration-200 border-2 border-dashed ${
+            dragging ? 'border-flora-500 bg-flora-50 scale-[1.02]' : 'border-flora-200 hover:border-flora-400 hover:bg-flora-50/50'
+          }`}>
+          <input ref={fileInputRef} type="file" accept="image/*" className="hidden"
+            onChange={(e) => handleFile(e.target.files[0])} />
+          <Upload className="w-12 h-12 text-flora-400 mx-auto mb-4" />
+          <p className="text-lg font-medium text-flora-800 mb-1">Перетащите фото или нажмите для выбора</p>
+          <p className="text-sm text-flora-500">JPG, PNG, WEBP · до 10 MB</p>
         </div>
+      )}
 
-        {/* Mode tabs */}
-        <div className="flex gap-2 mb-6 bg-white rounded-2xl p-1.5 shadow-sm border border-flora-100">
-          <button
-            onClick={() => { setMode('upload'); stopCamera(); reset(); }}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 ${
-              mode === 'upload' ? 'bg-flora-600 text-white shadow-md' : 'text-earth-500 hover:bg-flora-50'
-            }`}
-          >
-            <Upload size={16} /> Загрузить фото
-          </button>
-          <button
-            onClick={() => { setMode('camera'); reset(); startCamera(); }}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 ${
-              mode === 'camera' ? 'bg-blossom-500 text-white shadow-md' : 'text-earth-500 hover:bg-blossom-50'
-            }`}
-          >
-            <Camera size={16} /> Камера
-          </button>
-        </div>
-
-        {/* Upload mode */}
-        {mode === 'upload' && !preview && (
-          <div
-            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-            className={`card p-12 text-center cursor-pointer transition-all duration-200 border-2 border-dashed ${
-              dragging ? 'border-flora-500 bg-flora-50 scale-[1.02]' : 'border-flora-200 hover:border-flora-400 hover:bg-flora-50/50'
-            }`}
-          >
-            <input ref={fileInputRef} type="file" accept="image/*" className="hidden"
-              onChange={e => handleFile(e.target.files[0])} />
-            <Upload size={48} className={`mx-auto mb-4 transition-colors ${dragging ? 'text-flora-500' : 'text-flora-300'}`} />
-            <p className="font-medium text-earth-600 mb-1">Перетащите фото или нажмите для выбора</p>
-            <p className="text-sm text-earth-400">JPG, PNG, WEBP · до 10 MB</p>
-          </div>
-        )}
-
-        {/* Camera mode */}
-        {mode === 'camera' && !preview && (
-          <div className="card overflow-hidden">
-            <div className="relative bg-earth-900 aspect-[4/3]">
-              <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-              <canvas ref={canvasRef} className="hidden" />
-              {!cameraActive && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="text-white text-center">
-                    <Camera size={48} className="mx-auto mb-2 opacity-50" />
-                    <p className="text-sm opacity-60">Запуск камеры...</p>
-                  </div>
-                </div>
-              )}
-              {cameraActive && (
-                <div className="absolute inset-0 pointer-events-none">
-                  <div className="absolute inset-4 border-2 border-white/30 rounded-2xl" />
-                  <div className="absolute top-4 left-4 w-8 h-8 border-t-2 border-l-2 border-blossom-400 rounded-tl" />
-                  <div className="absolute top-4 right-4 w-8 h-8 border-t-2 border-r-2 border-blossom-400 rounded-tr" />
-                  <div className="absolute bottom-4 left-4 w-8 h-8 border-b-2 border-l-2 border-blossom-400 rounded-bl" />
-                  <div className="absolute bottom-4 right-4 w-8 h-8 border-b-2 border-r-2 border-blossom-400 rounded-br" />
-                </div>
-              )}
+      {/* Camera mode */}
+      {mode === 'camera' && !preview && (
+        <div className="card overflow-hidden">
+          {!cameraActive && (
+            <div className="p-12 text-center">
+              <Camera className="w-12 h-12 text-flora-400 mx-auto mb-4" />
+              <button onClick={startCamera} className="btn-primary">Запустить камеру</button>
             </div>
-            {cameraActive && (
-              <div className="p-4 flex justify-center">
-                <button onClick={capturePhoto} className="w-16 h-16 rounded-full bg-white border-4 border-blossom-400 hover:border-blossom-500 shadow-lg transition-all hover:scale-110 active:scale-95 flex items-center justify-center">
-                  <div className="w-10 h-10 rounded-full bg-blossom-400" />
-                </button>
+          )}
+          {cameraActive && (
+            <div className="relative">
+              <video ref={videoRef} className="w-full aspect-[4/3] object-cover bg-black" playsInline />
+              <canvas ref={canvasRef} className="hidden" />
+              <button onClick={capturePhoto}
+                className="absolute bottom-4 left-1/2 -translate-x-1/2 w-16 h-16 rounded-full bg-white border-4 border-flora-500 shadow-lg flex items-center justify-center hover:scale-105 transition-transform">
+                <div className="w-12 h-12 rounded-full bg-flora-500" />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Preview */}
+      {preview && !result && (
+        <div className="card p-6 text-center">
+          <img src={preview} alt="Preview" className="w-full max-h-96 object-contain rounded-xl mb-4" />
+          {error && (
+            <div className="bg-red-50 text-red-600 px-4 py-3 rounded-lg mb-4 flex items-center gap-2 justify-center">
+              <AlertTriangle className="w-5 h-5" />{error}
+            </div>
+          )}
+          {loading && (
+            <div className="flex items-center justify-center gap-3 text-flora-600">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              <span>Анализируем изображение...</span>
+            </div>
+          )}
+          <button onClick={reset} className="mt-4 text-flora-500 hover:text-flora-700 flex items-center gap-1 mx-auto">
+            <X className="w-4 h-4" />Отмена
+          </button>
+        </div>
+      )}
+
+      {/* Result */}
+      {result && (
+        <div className="space-y-6">
+          {/* Photo */}
+          <div className="card p-4">
+            <img src={`${API}${result.image_url}`} alt="Uploaded" className="w-full max-h-80 object-contain rounded-xl" />
+          </div>
+
+          {/* Main result */}
+          <div className={`card p-6 ${result.is_unknown ? 'border-amber-300 bg-amber-50/30' : ''}`}>
+            {result.is_demo && (
+              <div className="bg-amber-50 text-amber-700 px-4 py-2 rounded-lg mb-4 text-sm flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4" />
+                Демо-режим: настройте Pl@ntNet API для реального распознавания
               </div>
             )}
-          </div>
-        )}
+            {result.is_unknown && !result.is_demo && (
+              <div className="bg-blue-50 text-blue-700 px-4 py-2 rounded-lg mb-4 text-sm flex items-center gap-2">
+                <Leaf className="w-4 h-4" />
+                Это растение не найдено в нашем каталоге. Показан лучший вариант от ИИ.
+              </div>
+            )}
 
-        {/* Preview */}
-        {preview && !result && (
-          <div className="card overflow-hidden page-enter">
-            <div className="relative">
-              <img src={preview} alt="Preview" className="w-full max-h-80 object-cover" />
-              <button onClick={reset}
-                className="absolute top-3 right-3 w-8 h-8 rounded-full bg-earth-900/60 text-white flex items-center justify-center hover:bg-earth-900/80 transition-colors">
-                <X size={16} />
-              </button>
-            </div>
-            <div className="p-6">
-              {error && (
-                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm flex items-center gap-2">
-                  <AlertCircle size={16} /> {error}
-                </div>
-              )}
-              <button onClick={analyze} disabled={loading}
-                className="btn-pink w-full justify-center text-base disabled:opacity-60">
-                {loading
-                  ? <><span className="animate-spin text-xl">🌸</span> Анализируем...</>
-                  : <><Sparkles size={20} /> Определить дерево</>
-                }
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Result */}
-        {result && (
-          <div className="space-y-4 page-enter">
-            <div className="card overflow-hidden">
-              {/* Header */}
-              <div className="bg-gradient-to-r from-flora-600 to-flora-700 p-6 text-white">
-                <div className="flex items-center gap-3 mb-2">
-                  <CheckCircle size={24} className="text-flora-200" />
-                  <h2 className="font-display font-bold text-xl">Результат распознавания</h2>
-                </div>
-                {result.is_demo && (
-                  <div className="flex items-center gap-2 text-flora-100 text-xs bg-flora-800/40 rounded-lg px-3 py-1.5 mt-2">
-                    <Info size={12} /> Демо-режим: настройте Yandex Vision API для реального распознавания
-                  </div>
+            {/* Best match */}
+            <div className="flex items-start gap-4 mb-6">
+              <div className="w-16 h-16 rounded-2xl bg-flora-100 flex items-center justify-center flex-shrink-0">
+                <Leaf className="w-8 h-8 text-flora-600" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm text-flora-500 mb-1">{result.is_unknown ? 'Возможно, это' : 'Определено'}</p>
+                <h2 className="text-2xl font-bold text-flora-900">{result.tree?.name_ru || result.variants?.[0]?.name}</h2>
+                <p className="text-flora-600 italic">{result.tree?.name_latin || result.variants?.[0]?.latin}</p>
+                {result.tree?.family && (
+                  <p className="text-sm text-flora-500 mt-1">Семейство: {result.tree.family}</p>
+                )}
+                {!result.tree?.family && result.variants?.[0]?.family && (
+                  <p className="text-sm text-flora-500 mt-1">Семейство: {result.variants[0].family}</p>
                 )}
               </div>
-
-              {/* Photo + result */}
-              <div className="grid md:grid-cols-2 gap-0">
-                <div className="relative">
-                  <img src={preview} alt="Analyzed" className="w-full h-56 object-cover" />
-                  {/* Confidence */}
-                  <div className="absolute bottom-3 left-3 right-3 bg-earth-900/70 backdrop-blur-sm rounded-xl px-3 py-2">
-                    <div className="flex justify-between text-white text-xs mb-1 font-medium">
-                      <span>Уверенность ИИ</span>
-                      <span>{result.confidence}%</span>
-                    </div>
-                    <div className="h-1.5 bg-earth-600 rounded-full overflow-hidden">
-                      <div
-                        className="h-full rounded-full confidence-bar"
-                        style={{
-                          '--target-width': `${result.confidence}%`,
-                          background: result.confidence > 80 ? '#22c55e' : result.confidence > 60 ? '#f59e0b' : '#ef4444'
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-6">
-                  <div className="badge bg-flora-100 text-flora-700 mb-3">
-                    <Leaf size={12} className="mr-1" /> Определено
-                  </div>
-                  <h3 className="font-display font-bold text-2xl text-earth-800 mb-1">
-                    {result.tree?.name_ru}
-                  </h3>
-                  <p className="text-earth-400 text-sm italic mb-3">{result.tree?.name_latin}</p>
-                  <div className="space-y-2 text-sm">
-                    <div><span className="text-earth-400">Семейство:</span> <span className="font-medium text-earth-700">{result.tree?.family}</span></div>
-                    <div><span className="text-earth-400">Цветение:</span> <span className="font-medium text-earth-700">{result.tree?.bloom_season}</span></div>
-                  </div>
+              <div className="text-right">
+                <div className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-bold ${
+                  result.confidence > 80 ? 'bg-green-100 text-green-700' :
+                  result.confidence > 50 ? 'bg-amber-100 text-amber-700' :
+                  'bg-red-100 text-red-700'
+                }`}>
+                  {result.confidence}% уверенность
                 </div>
               </div>
+            </div>
 
-              {result.tree?.flower_description && (
-                <div className="px-6 pb-4 border-t border-flora-50 pt-4">
-                  <p className="text-sm text-earth-500 leading-relaxed">
-                    <span className="font-medium text-earth-700">Описание цветков: </span>
-                    {result.tree.flower_description}
-                  </p>
+            {/* Tree details if in catalog */}
+            {result.tree && (
+              <div className="bg-white rounded-xl p-4 mb-4 border border-flora-100">
+                {result.tree.bloom_season && (
+                  <p className="text-sm text-flora-600 mb-2"><span className="font-medium">Цветение:</span> {result.tree.bloom_season}</p>
+                )}
+                {result.tree.flower_description && (
+                  <p className="text-sm text-flora-600"><span className="font-medium">Описание цветков:</span> {result.tree.flower_description}</p>
+                )}
+                {result.tree.id && (
+                  <a href={`/catalog/${result.tree.id}`} className="inline-flex items-center gap-1 text-flora-600 hover:text-flora-800 text-sm mt-3 font-medium">
+                    Подробнее в каталоге →
+                  </a>
+                )}
+              </div>
+            )}
+
+            {/* All variants */}
+            {result.variants && result.variants.length > 1 && (
+              <div className="mt-4">
+                <p className="text-sm font-medium text-flora-700 mb-3">Другие варианты:</p>
+                <div className="space-y-2">
+                  {result.variants.slice(1).map((v, i) => (
+                    <div key={i} className={`rounded-xl border transition-all ${
+                      expandedVariant === i + 1 ? 'border-flora-300 bg-flora-50/50' : 'border-flora-100 bg-white hover:border-flora-200'
+                    }`}>
+                      <button
+                        onClick={() => setExpandedVariant(expandedVariant === i + 1 ? -1 : i + 1)}
+                        className="w-full px-4 py-3 flex items-center justify-between text-left"
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${
+                            v.confidence > 70 ? 'bg-green-100 text-green-700' :
+                            v.confidence > 40 ? 'bg-amber-100 text-amber-700' :
+                            'bg-red-100 text-red-700'
+                          }`}>
+                            {v.confidence}%
+                          </span>
+                          <div>
+                            <p className="font-medium text-flora-800 text-sm">{v.name}</p>
+                            <p className="text-xs text-flora-500 italic">{v.latin}</p>
+                          </div>
+                          {!v.inCatalog && (
+                            <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">не в каталоге</span>
+                          )}
+                        </div>
+                        {expandedVariant === i + 1 ? <ChevronUp className="w-4 h-4 text-flora-400" /> : <ChevronDown className="w-4 h-4 text-flora-400" />}
+                      </button>
+                      {expandedVariant === i + 1 && (
+                        <div className="px-4 pb-3 pt-1 border-t border-flora-100">
+                          <p className="text-xs text-flora-600 mb-1">Семейство: {v.family}</p>
+                          {v.commonNames?.length > 0 && (
+                            <p className="text-xs text-flora-500">Также известно как: {v.commonNames.join(', ')}</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
+              </div>
+            )}
+
+            {/* Notes */}
+            <div className="mt-6 pt-4 border-t border-flora-100">
+              <label className="text-sm font-medium text-flora-700 mb-2 block">📝 Ваши заметки</label>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Где сфотографировали? Какие впечатления?"
+                className="w-full px-4 py-3 rounded-xl border border-flora-200 focus:border-flora-400 focus:ring-2 focus:ring-flora-100 outline-none resize-none text-sm"
+                rows={3}
+              />
+              {result.history_id && (
+                <button onClick={saveNotes} disabled={savingNotes || !notes.trim()}
+                  className="mt-2 px-4 py-2 bg-flora-500 text-white rounded-lg text-sm font-medium hover:bg-flora-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                  {savingNotes ? 'Сохранение...' : 'Сохранить заметку'}
+                </button>
               )}
-
-              {/* Notes */}
-              <div className="px-6 pb-6">
-                <label className="block text-sm font-medium text-earth-700 mb-2">📝 Ваши заметки</label>
-                <textarea
-                  value={notes}
-                  onChange={e => setNotes(e.target.value)}
-                  placeholder="Где нашли это дерево? Особые наблюдения..."
-                  rows={3}
-                  className="input-field resize-none"
-                />
-                <div className="flex gap-3 mt-3">
-                  <button onClick={saveNotes} className="btn-secondary !py-2 !px-4 text-sm flex-1 justify-center">
-                    {notesSaved ? <><CheckCircle size={16} className="text-green-500" /> Сохранено!</> : 'Сохранить заметку'}
-                  </button>
-                  <Link to={`/catalog/${result.tree?.id}`} className="btn-primary !py-2 !px-4 text-sm">
-                    Подробнее
-                  </Link>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <button onClick={reset} className="btn-secondary flex-1 justify-center">
-                <RefreshCw size={16} /> Новое фото
-              </button>
-              <Link to="/profile" className="btn-primary flex-1 justify-center">
-                История распознаваний
-              </Link>
             </div>
           </div>
-        )}
 
-        {error && !preview && (
-          <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-2xl text-red-600 text-sm flex items-center gap-2">
-            <AlertCircle size={16} /> {error}
-          </div>
-        )}
-      </div>
+          <button onClick={reset} className="w-full py-3 bg-white border-2 border-flora-200 text-flora-700 rounded-xl font-medium hover:bg-flora-50 transition-colors">
+            🔄 Распознать другое фото
+          </button>
+        </div>
+      )}
     </div>
   );
 }
