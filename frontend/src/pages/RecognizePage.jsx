@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
-import { Camera, Upload, Loader2, Leaf, X, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react';
+import { Camera, Upload, Loader2, Leaf, X, ChevronDown, ChevronUp, AlertTriangle, PlusCircle } from 'lucide-react';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -221,14 +221,27 @@ export default function RecognizePage() {
                 <Leaf className="w-8 h-8 text-flora-600" />
               </div>
               <div className="flex-1">
-                <p className="text-sm text-flora-500 mb-1">{result.is_unknown ? 'Возможно, это' : 'Определено'}</p>
-                <h2 className="text-2xl font-bold text-flora-900">{result.tree?.name_ru || result.variants?.[0]?.name}</h2>
-                <p className="text-flora-600 italic">{result.tree?.name_latin || result.variants?.[0]?.latin}</p>
-                {result.tree?.family && (
-                  <p className="text-sm text-flora-500 mt-1">Семейство: {result.tree.family}</p>
+                <p className="text-sm text-flora-500 mb-1">
+                  {result.is_unknown ? 'Возможно, это (не в каталоге)' : 'Определено'}
+                </p>
+                <h2 className="text-2xl font-bold text-flora-900">
+                  {result.tree?.name_ru || result.variants?.[0]?.name || 'Неизвестное растение'}
+                </h2>
+                <p className="text-flora-600 italic">
+                  {result.tree?.name_latin || result.variants?.[0]?.latin || ''}
+                </p>
+                <p className="text-sm text-flora-500 mt-1">
+                  Семейство: {result.tree?.family || result.variants?.[0]?.family || '—'}
+                </p>
+                {result.tree?.bloom_season && (
+                  <p className="text-sm text-flora-500 mt-1">
+                    Цветение: {result.tree.bloom_season}
+                  </p>
                 )}
-                {!result.tree?.family && result.variants?.[0]?.family && (
-                  <p className="text-sm text-flora-500 mt-1">Семейство: {result.variants[0].family}</p>
+                {!result.tree && result.variants?.[0]?.commonNames?.length > 0 && (
+                  <p className="text-sm text-flora-500 mt-1">
+                    Также известно как: {result.variants[0].commonNames.join(', ')}
+                  </p>
                 )}
               </div>
               <div className="text-right">
@@ -239,6 +252,11 @@ export default function RecognizePage() {
                 }`}>
                   {result.confidence}% уверенность
                 </div>
+                {result.is_unknown && !result.is_demo && (
+                  <span className="block mt-1 text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                    не в каталоге
+                  </span>
+                )}
               </div>
             </div>
 
@@ -246,16 +264,42 @@ export default function RecognizePage() {
             {result.tree && (
               <div className="bg-white rounded-xl p-4 mb-4 border border-flora-100">
                 {result.tree.bloom_season && (
-                  <p className="text-sm text-flora-600 mb-2"><span className="font-medium">Цветение:</span> {result.tree.bloom_season}</p>
+                  <p className="text-sm text-flora-600 mb-2">
+                    <span className="font-medium">Цветение:</span> {result.tree.bloom_season}
+                  </p>
                 )}
                 {result.tree.flower_description && (
-                  <p className="text-sm text-flora-600"><span className="font-medium">Описание цветков:</span> {result.tree.flower_description}</p>
+                  <p className="text-sm text-flora-600">
+                    <span className="font-medium">Описание цветков:</span> {result.tree.flower_description}
+                  </p>
                 )}
-                {result.tree.id && (
-                  <a href={`/catalog/${result.tree.id}`} className="inline-flex items-center gap-1 text-flora-600 hover:text-flora-800 text-sm mt-3 font-medium">
-                    Подробнее в каталоге →
-                  </a>
+                <a href={`/catalog/${result.tree.id}`} className="inline-flex items-center gap-1 text-flora-600 hover:text-flora-800 text-sm mt-3 font-medium">
+                  Подробнее в каталоге →
+                </a>
+              </div>
+            )}
+
+            {/* If NOT in catalog - show info from Pl@ntNet + add button */}
+            {!result.tree && result.variants?.[0] && (
+              <div className="bg-blue-50 rounded-xl p-4 mb-4 border border-blue-200">
+                <p className="text-sm text-blue-800 mb-2">
+                  <span className="font-medium">Это растение пока не добавлено в наш каталог.</span>
+                </p>
+                <p className="text-sm text-blue-700">
+                  <span className="font-medium">Научное название:</span> {result.variants[0].latin}
+                </p>
+                {result.variants[0].commonNames?.length > 0 && (
+                  <p className="text-sm text-blue-700 mt-1">
+                    <span className="font-medium">Известно как:</span> {result.variants[0].commonNames.join(', ')}
+                  </p>
                 )}
+                <p className="text-sm text-blue-700 mt-1">
+                  <span className="font-medium">Семейство:</span> {result.variants[0].family}
+                </p>
+                <a href="/catalog/new" className="inline-flex items-center gap-2 mt-3 px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 transition-colors">
+                  <PlusCircle className="w-4 h-4" />
+                  Добавить в каталог
+                </a>
               </div>
             )}
 
