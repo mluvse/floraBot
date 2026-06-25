@@ -26,37 +26,6 @@ const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 const PLANTNET_API_KEY = process.env.PLANTNET_API_KEY;
 const PLANTNET_API_URL = 'https://my-api.plantnet.org/v2/identify/all';
 
-// Ключевые слова для сопоставления с деревьями в БД
-const TREE_KEYWORDS = [
-  { keywords: ['apple','яблон','malus','яблоко'], name: 'Яблоня домашняя' },
-  { keywords: ['cherry','вишн','prunus cerasus'], name: 'Вишня обыкновенная' },
-  { keywords: ['sakura','сакур','prunus serrulata','japanese cherry'], name: 'Сакура' },
-  { keywords: ['lilac','сирен','syringa'], name: 'Сирень обыкновенная' },
-  { keywords: ['chestnut','каштан','aesculus','конский каштан'], name: 'Каштан конский' },
-  { keywords: ['bird cherry','черемух','padus','prunus padus'], name: 'Черёмуха обыкновенная' },
-  { keywords: ['acacia','акаци','robinia','белая акация'], name: 'Акация белая' },
-  { keywords: ['rowan','рябин','sorbus'], name: 'Рябина обыкновенная' },
-  { keywords: ['linden','липа','tilia'], name: 'Липа мелколистная' },
-  { keywords: ['magnolia','магноли'], name: 'Магнолия крупноцветковая' },
-  { keywords: ['plum','слив','prunus domestica'], name: 'Слива домашняя' },
-  { keywords: ['pear','груш','pyrus'], name: 'Груша обыкновенная' },
-  { keywords: ['hawthorn','боярышник','crataegus'], name: 'Боярышник колючий' },
-  { keywords: ['peach','персик','prunus persica'], name: 'Персик обыкновенный' },
-  { keywords: ['apricot','абрикос','prunus armeniaca'], name: 'Абрикос обыкновенный' },
-  { keywords: ['maple','клён','клен','acer'], name: 'Клён остролистный' },
-  { keywords: ['pine','сосн','pinus','хвоя'], name: 'Сосна обыкновенная' },
-  { keywords: ['spruce','ель','picea','ёлк','елк'], name: 'Ель европейская' },
-  { keywords: ['oak','дуб','quercus'], name: 'Дуб черешчатый' },
-  { keywords: ['birch','берёз','берез','betula'], name: 'Берёза повислая' },
-  { keywords: ['aspen','осин','populus tremula'], name: 'Осина' },
-  { keywords: ['alder','ольха','alnus'], name: 'Ольха' },
-  { keywords: ['poplar','топол','populus'], name: 'Тополь' },
-  { keywords: ['willow','ива','salix'], name: 'Ива' },
-  { keywords: ['elm','вяз','ulmus'], name: 'Вяз' },
-  { keywords: ['ash','ясень','fraxinus'], name: 'Ясень' },
-  { keywords: ['lime','липа','tilia'], name: 'Липа' },
-];
-
 async function analyzeWithPlantNet(imageBuffer) {
   if (!PLANTNET_API_KEY || PLANTNET_API_KEY === 'your_plantnet_api_key') {
     return null;
@@ -65,7 +34,7 @@ async function analyzeWithPlantNet(imageBuffer) {
   try {
     const form = new FormData();
     form.append('images', imageBuffer, { filename: 'flower.jpg', contentType: 'image/jpeg' });
-    form.append('organs', 'flower'); // Указываем, что фото цветка
+    form.append('organs', 'flower');
 
     const response = await axios.post(
       `${PLANTNET_API_URL}?api-key=${PLANTNET_API_KEY}`,
@@ -76,8 +45,8 @@ async function analyzeWithPlantNet(imageBuffer) {
     const results = response.data.results || [];
     if (results.length === 0) return null;
 
-    // Берём топ-3 результата
-    const topResults = results.slice(0, 3).map(r => ({
+    // Берём топ-5 результатов
+    const topResults = results.slice(0, 5).map(r => ({
       scientificName: r.species?.scientificNameWithoutAuthor || '',
       commonNames: r.species?.commonNames || [],
       family: r.species?.family?.scientificName || '',
@@ -93,103 +62,108 @@ async function analyzeWithPlantNet(imageBuffer) {
   }
 }
 
-async function matchTreeByPlantNet(plantData) {
-  if (!plantData || !plantData.results || plantData.results.length === 0) {
-    return { tree: null, score: 0 };
-  }
-
-  // Получаем все деревья из БД
+// Сопоставляем Pl@ntNet результат с деревом из БД
+async function matchTree(plantResult) {
   const { rows: trees } = await pool.query('SELECT * FROM trees');
 
-  let bestMatch = null;
-  let bestScore = 0;
+  const searchTerms = [
+    plantResult.scientificName.toLowerCase(),
+    ...(plantResult.commonNames || []).map(n => n.toLowerCase()),
+    plantResult.genus.toLowerCase(),
+    plantResult.family.toLowerCase()
+  ].filter(Boolean);
 
-  for (const result of plantData.results) {
-    const searchTerms = [
-      result.scientificName.toLowerCase(),
-      ...(result.commonNames || []).map(n => n.toLowerCase()),
-      result.genus.toLowerCase(),
-      result.family.toLowerCase()
-    ].filter(Boolean);
+  for (const tree of trees) {
+    const treeNameRu = tree.name_ru.toLowerCase();
+    const treeNameLatin = (tree.name_latin || '').toLowerCase();
 
-    for (const tree of trees) {
-      const treeNameRu = tree.name_ru.toLowerCase();
-      const treeNameLatin = (tree.name_latin || '').toLowerCase();
-      const treeFamily = (tree.family || '').toLowerCase();
-
-      for (const term of searchTerms) {
-        let score = 0;
-
-        // Точное совпадение по латинскому названию
-        if (treeNameLatin && (treeNameLatin === term || term.includes(treeNameLatin))) {
-          score = result.score * 0.95;
-        }
-        // Совпадение по русскому названию
-        else if (treeNameRu === term || term.includes(treeNameRu) || treeNameRu.includes(term)) {
-          score = result.score * 0.90;
-        }
-        // Совпадение по семейству
-        else if (treeFamily && treeFamily.includes(term)) {
-          score = result.score * 0.30;
-        }
-        // Ключевое слово
-        else {
-          const keywordMatch = TREE_KEYWORDS.find(kw => 
-            kw.keywords.some(k => term.includes(k))
-          );
-          if (keywordMatch && keywordMatch.name.toLowerCase() === treeNameRu) {
-            score = result.score * 0.85;
-          }
-        }
-
-        if (score > bestScore) {
-          bestScore = score;
-          bestMatch = tree;
-        }
+    for (const term of searchTerms) {
+      if (treeNameLatin && (treeNameLatin === term || term.includes(treeNameLatin))) {
+        return { tree, score: plantResult.score * 0.95 };
+      }
+      if (treeNameRu === term || term.includes(treeNameRu) || treeNameRu.includes(term)) {
+        return { tree, score: plantResult.score * 0.90 };
       }
     }
   }
-
-  return { tree: bestMatch, score: bestScore };
+  return { tree: null, score: 0 };
 }
 
 async function processRecognition(base64Image, userId) {
-  let matchedTree = null;
-  let confidence = 0;
-  let rawResult = {};
   let isDemo = false;
 
   try {
     const imageBuffer = Buffer.from(base64Image, 'base64');
     const plantData = await analyzeWithPlantNet(imageBuffer);
 
-    if (plantData) {
-      rawResult = plantData.raw;
-      const { tree, score } = await matchTreeByPlantNet(plantData);
-
-      if (tree && score > 0.15) {
-        matchedTree = tree;
-        confidence = score;
-        logger.info(`Matched tree via Pl@ntNet: ${tree.name_ru} with confidence ${score}`);
+    if (plantData && plantData.results.length > 0) {
+      // Сопоставляем все варианты с каталогом
+      const variants = [];
+      for (const result of plantData.results) {
+        const { tree, score } = await matchTree(result);
+        variants.push({
+          scientificName: result.scientificName,
+          commonNames: result.commonNames,
+          family: result.family,
+          genus: result.genus,
+          score: result.score,
+          matchedTree: tree,
+          matchScore: score
+        });
       }
+
+      // Берём лучший вариант из каталога (если есть)
+      const catalogMatches = variants.filter(v => v.matchedTree);
+      const bestCatalogMatch = catalogMatches.length > 0
+        ? catalogMatches.reduce((best, curr) => curr.matchScore > best.matchScore ? curr : best)
+        : null;
+
+      // Если нет совпадения в каталоге — показываем лучший вариант Pl@ntNet
+      const bestOverall = variants[0];
+
+      return {
+        matchedTree: bestCatalogMatch?.matchedTree || null,
+        confidence: bestCatalogMatch?.matchScore || bestOverall.score,
+        rawResult: plantData.raw,
+        isDemo: false,
+        variants: variants.map(v => ({
+          name: v.matchedTree?.name_ru || v.scientificName,
+          latin: v.matchedTree?.name_latin || v.scientificName,
+          family: v.matchedTree?.family || v.family,
+          confidence: Math.round((v.matchedTree ? v.matchScore : v.score) * 100),
+          inCatalog: !!v.matchedTree,
+          commonNames: v.commonNames
+        })),
+        isUnknown: !bestCatalogMatch
+      };
     }
   } catch (err) {
     logger.error('Pl@ntNet recognition error:', err.message);
   }
 
-  // Демо-режим только если Pl@ntNet не настроен или не дал результата
-  if (!matchedTree) {
-    isDemo = true;
-    const { rows } = await pool.query(
-      `SELECT * FROM trees WHERE bloom_season NOT LIKE '%шишк%' ORDER BY RANDOM() LIMIT 1`
-    );
-    matchedTree = rows[0];
-    confidence = 0.35 + Math.random() * 0.15; // честная низкая уверенность
-    rawResult = { demo: true, message: 'Pl@ntNet API не настроен или не распознал растение. Показано случайное цветущее дерево.' };
-    logger.info(`Demo mode: returning random tree ${matchedTree?.name_ru}`);
-  }
+  // Демо-режим
+  isDemo = true;
+  const { rows } = await pool.query(
+    `SELECT * FROM trees WHERE bloom_season NOT LIKE '%шишк%' ORDER BY RANDOM() LIMIT 1`
+  );
+  const matchedTree = rows[0];
+  const confidence = 0.35 + Math.random() * 0.15;
 
-  return { matchedTree, confidence, rawResult, isDemo };
+  return {
+    matchedTree,
+    confidence,
+    rawResult: { demo: true, message: 'Pl@ntNet API не настроен или не распознал растение.' },
+    isDemo: true,
+    variants: [{
+      name: matchedTree.name_ru,
+      latin: matchedTree.name_latin,
+      family: matchedTree.family,
+      confidence: Math.round(confidence * 100),
+      inCatalog: true,
+      commonNames: []
+    }],
+    isUnknown: false
+  };
 }
 
 // POST /api/recognition/analyze — загрузка файла
@@ -201,21 +175,23 @@ router.post('/analyze', authMiddleware, upload.single('image'), async (req, res)
     const base64Image = imageData.toString('base64');
     const imageUrl = `/uploads/recognition/${req.file.filename}`;
 
-    const { matchedTree, confidence, rawResult, isDemo } = await processRecognition(base64Image, req.user.id);
+    const result = await processRecognition(base64Image, req.user.id);
 
     const { rows: histRows } = await pool.query(
       `INSERT INTO recognition_history (user_id, tree_id, image_url, confidence, raw_result)
        VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-      [req.user.id, matchedTree?.id || null, imageUrl, confidence, JSON.stringify(rawResult)]
+      [req.user.id, result.matchedTree?.id || null, imageUrl, result.confidence, JSON.stringify(result.rawResult)]
     );
 
     res.json({
       success: true,
       history_id: histRows[0].id,
-      tree: matchedTree,
-      confidence: Math.round(confidence * 100),
+      tree: result.matchedTree,
+      confidence: Math.round(result.confidence * 100),
       image_url: imageUrl,
-      is_demo: isDemo,
+      is_demo: result.isDemo,
+      is_unknown: result.isUnknown,
+      variants: result.variants
     });
   } catch (err) {
     logger.error('Recognition error:', err);
@@ -236,20 +212,22 @@ router.post('/analyze-base64', authMiddleware, async (req, res) => {
     fs.writeFileSync(path.join(dir, filename), Buffer.from(base64Data, 'base64'));
     const imageUrl = `/uploads/recognition/${filename}`;
 
-    const { matchedTree, confidence, rawResult, isDemo } = await processRecognition(base64Data, req.user.id);
+    const result = await processRecognition(base64Data, req.user.id);
 
     await pool.query(
       `INSERT INTO recognition_history (user_id, tree_id, image_url, confidence, raw_result)
        VALUES ($1,$2,$3,$4,$5)`,
-      [req.user.id, matchedTree?.id || null, imageUrl, confidence, JSON.stringify(rawResult)]
+      [req.user.id, result.matchedTree?.id || null, imageUrl, result.confidence, JSON.stringify(result.rawResult)]
     );
 
     res.json({
       success: true,
-      tree: matchedTree,
-      confidence: Math.round(confidence * 100),
+      tree: result.matchedTree,
+      confidence: Math.round(result.confidence * 100),
       image_url: imageUrl,
-      is_demo: isDemo,
+      is_demo: result.isDemo,
+      is_unknown: result.isUnknown,
+      variants: result.variants
     });
   } catch (err) {
     logger.error('Camera recognition error:', err);
