@@ -4,6 +4,7 @@ import axios from 'axios';
 import { Camera, Upload, Loader2, Leaf, X, ChevronDown, ChevronUp, AlertTriangle, PlusCircle } from 'lucide-react';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const getToken = () => localStorage.getItem('florabot_token');
 
 export default function RecognizePage() {
   const { user } = useAuth();
@@ -38,7 +39,7 @@ export default function RecognizePage() {
       const formData = new FormData();
       formData.append('image', file);
       const res = await axios.post(`${API}/api/recognition/analyze`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data', Authorization: `Bearer ${localStorage.getItem('token')}` }
+        headers: { 'Content-Type': 'multipart/form-data', Authorization: `Bearer ${getToken()}` }
       });
       setResult(res.data);
     } catch (err) {
@@ -78,7 +79,7 @@ export default function RecognizePage() {
     try {
       const res = await axios.post(`${API}/api/recognition/analyze-base64`,
         { imageBase64: dataUrl },
-        { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
+        { headers: { Authorization: `Bearer ${getToken()}` } }
       );
       setResult(res.data);
     } catch (err) {
@@ -106,7 +107,7 @@ export default function RecognizePage() {
     try {
       await axios.patch(`${API}/api/history/${result.history_id}/notes`,
         { notes },
-        { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
+        { headers: { Authorization: `Bearer ${getToken()}` } }
       );
     } catch {} finally { setSavingNotes(false); }
   };
