@@ -176,6 +176,11 @@ const PLANT_NAME_RU = {
   'vine': 'Виноград',
   'vitis': 'Виноград',
   'grape': 'Виноград',
+  'philadelphus coronarius': 'Чубушник венечный',
+  'philadelphus': 'Чубушник',
+  'mock orange': 'Чубушник',
+  'sweet mock orange': 'Чубушник',
+  'white syringa': 'Чубушник',
 };
 
 // Функция для получения русского названия
