@@ -26,6 +26,185 @@ const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 const PLANTNET_API_KEY = process.env.PLANTNET_API_KEY;
 const PLANTNET_API_URL = 'https://my-api.plantnet.org/v2/identify/all';
 
+// Словарь перевода часто встречающихся растений
+const PLANT_NAME_RU = {
+  'rosa canina': 'Шиповник собачий',
+  'rosa rugosa': 'Шиповник морщинистый',
+  'rosa': 'Роза',
+  'taraxacum officinale': 'Одуванчик лекарственный',
+  'taraxacum': 'Одуванчик',
+  'bellis perennis': 'Маргаритка многолетняя',
+  'bellis': 'Маргаритка',
+  'trifolium pratense': 'Клевер луговой',
+  'trifolium': 'Клевер',
+  'plantago major': 'Подорожник большой',
+  'plantago': 'Подорожник',
+  'matricaria chamomilla': 'Ромашка аптечная',
+  'matricaria': 'Ромашка',
+  'chamomilla': 'Ромашка',
+  'chamomile': 'Ромашка',
+  'achillea millefolium': 'Тысячелистник обыкновенный',
+  'achillea': 'Тысячелистник',
+  'urtica dioica': 'Крапива двудомная',
+  'urtica': 'Крапива',
+  'nettle': 'Крапива',
+  'dandelion': 'Одуванчик',
+  'daisy': 'Маргаритка',
+  'clover': 'Клевер',
+  'plantain': 'Подорожник',
+  'yarrow': 'Тысячелистник',
+  'cherry blossom': 'Сакура',
+  'japanese cherry': 'Сакура',
+  'prunus serrulata': 'Сакура',
+  'prunus avium': 'Черешня',
+  'prunus padus': 'Черёмуха обыкновенная',
+  'prunus cerasus': 'Вишня обыкновенная',
+  'prunus domestica': 'Слива домашняя',
+  'prunus persica': 'Персик обыкновенный',
+  'prunus armeniaca': 'Абрикос обыкновенный',
+  'prunus': 'Слива',
+  'malus domestica': 'Яблоня домашняя',
+  'malus': 'Яблоня',
+  'pyrus communis': 'Груша обыкновенная',
+  'pyrus': 'Груша',
+  'aesculus hippocastanum': 'Каштан конский',
+  'aesculus': 'Каштан',
+  'syringa vulgaris': 'Сирень обыкновенная',
+  'syringa': 'Сирень',
+  'robinia pseudoacacia': 'Акация белая',
+  'robinia': 'Акация',
+  'acacia': 'Акация',
+  'sorbus aucuparia': 'Рябина обыкновенная',
+  'sorbus': 'Рябина',
+  'tilia cordata': 'Липа мелколистная',
+  'tilia': 'Липа',
+  'linden': 'Липа',
+  'magnolia grandiflora': 'Магнолия крупноцветковая',
+  'magnolia': 'Магнолия',
+  'acer platanoides': 'Клён остролистный',
+  'acer': 'Клён',
+  'maple': 'Клён',
+  'pinus sylvestris': 'Сосна обыкновенная',
+  'pinus': 'Сосна',
+  'pine': 'Сосна',
+  'picea abies': 'Ель европейская',
+  'picea': 'Ель',
+  'spruce': 'Ель',
+  'quercus robur': 'Дуб черешчатый',
+  'quercus': 'Дуб',
+  'oak': 'Дуб',
+  'betula pendula': 'Берёза повислая',
+  'betula': 'Берёза',
+  'birch': 'Берёза',
+  'populus tremula': 'Осина',
+  'populus': 'Тополь',
+  'aspen': 'Осина',
+  'alnus incana': 'Ольха серая',
+  'alnus glutinosa': 'Ольха чёрная',
+  'alnus': 'Ольха',
+  'alder': 'Ольха',
+  'crataegus monogyna': 'Боярышник колючий',
+  'crataegus': 'Боярышник',
+  'hawthorn': 'Боярышник',
+  'fraxinus': 'Ясень',
+  'ash': 'Ясень',
+  'salix': 'Ива',
+  'willow': 'Ива',
+  'ulmus': 'Вяз',
+  'elm': 'Вяз',
+  'chestnut': 'Каштан',
+  'horse chestnut': 'Каштан конский',
+  'coneflower': 'Эхинацея',
+  'echinacea': 'Эхинацея',
+  'lavandula': 'Лаванда',
+  'lavender': 'Лаванда',
+  'narcissus': 'Нарцисс',
+  'daffodil': 'Нарцисс',
+  'tulip': 'Тюльпан',
+  'tulipa': 'Тюльпан',
+  'lily': 'Лилия',
+  'lilium': 'Лилия',
+  'sunflower': 'Подсолнух',
+  'helianthus': 'Подсолнух',
+  'poppy': 'Мак',
+  'papaver': 'Мак',
+  'iris': 'Ирис',
+  'peony': 'Пион',
+  'paeonia': 'Пион',
+  'hydrangea': 'Гортензия',
+  'hortensia': 'Гортензия',
+  'geranium': 'Герань',
+  'pelargonium': 'Пеларгония',
+  'fuchsia': 'Фуксия',
+  'begonia': 'Бегония',
+  'petunia': 'Петуния',
+  'marigold': 'Бархатцы',
+  'tagetes': 'Бархатцы',
+  'zinnia': 'Цинния',
+  'cosmos': 'Космея',
+  'aster': 'Астра',
+  'chrysanthemum': 'Хризантема',
+  'dahlia': 'Георгин',
+  'gladiolus': 'Гладиолус',
+  'crocus': 'Шафран',
+  'saffron': 'Шафран',
+  'snowdrop': 'Подснежник',
+  'galanthus': 'Подснежник',
+  'bluebell': 'Колокольчик',
+  'campanula': 'Колокольчик',
+  'foxglove': 'Наперстянка',
+  'digitalis': 'Наперстянка',
+  'lupine': 'Люпин',
+  'lupinus': 'Люпин',
+  'columbine': 'Аквилегия',
+  'aquilegia': 'Аквилегия',
+  'bleeding heart': 'Дицентра',
+  'dicentra': 'Дицентра',
+  'hosta': 'Хоста',
+  'plantain lily': 'Хоста',
+  'fern': 'Папоротник',
+  'moss': 'Мох',
+  'lichen': 'Лишайник',
+  'jasmine': 'Жасмин',
+  'jasminum': 'Жасмин',
+  'honeysuckle': 'Жимолость',
+  'lonicera': 'Жимолость',
+  'clematis': 'Клематис',
+  'wisteria': 'Глициния',
+  'ivy': 'Плющ',
+  'hedera': 'Плющ',
+  'vine': 'Виноград',
+  'vitis': 'Виноград',
+  'grape': 'Виноград',
+};
+
+// Функция для получения русского названия
+function getRussianName(scientificName, commonNames = []) {
+  const key = scientificName.toLowerCase().trim();
+
+  // Прямое совпадение по научному названию
+  if (PLANT_NAME_RU[key]) {
+    return PLANT_NAME_RU[key];
+  }
+
+  // Проверка по родовому названию (первая часть биномиального)
+  const genus = key.split(' ')[0];
+  if (PLANT_NAME_RU[genus]) {
+    return PLANT_NAME_RU[genus];
+  }
+
+  // Проверка по английским common names
+  for (const name of commonNames) {
+    const nameKey = name.toLowerCase().trim();
+    if (PLANT_NAME_RU[nameKey]) {
+      return PLANT_NAME_RU[nameKey];
+    }
+  }
+
+  // Если не нашли — возвращаем научное название
+  return scientificName;
+}
+
 async function analyzeWithPlantNet(imageBuffer) {
   if (!PLANTNET_API_KEY || PLANTNET_API_KEY === 'your_plantnet_api_key') {
     return null;
@@ -127,7 +306,7 @@ async function processRecognition(base64Image, userId) {
         rawResult: plantData.raw,
         isDemo: false,
         variants: variants.map(v => ({
-          name: v.matchedTree?.name_ru || v.scientificName,
+          name: v.matchedTree?.name_ru || getRussianName(v.scientificName, v.commonNames),
           latin: v.matchedTree?.name_latin || v.scientificName,
           family: v.matchedTree?.family || v.family,
           confidence: Math.round((v.matchedTree ? v.matchScore : v.score) * 100),
